@@ -1,0 +1,38 @@
+use master
+drop database if exists Mydatabase
+create database  Mydatabase
+use Mydatabase
+
+
+CREATE TABLE TransactionDetails (
+    TransactionDetailsID int  NOT NULL  PRIMARY KEY IDENTITY(1,1),
+    TransactionName varchar(255)  NOT NULL UNIQUE
+     
+)
+
+CREATE TABLE Currency (
+    CurrencyID int  NOT NULL  PRIMARY KEY IDENTITY(1,1),
+    CurrencyName varchar(255)  NOT NULL UNIQUE
+)
+
+CREATE TABLE Account (
+    AccountID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    AccontName varchar(255)  NOT NULL, 
+    CurrencyID int not NULL FOREIGN KEY REFERENCES Currency(CurrencyID), 
+    Balance MONEY  DEFAULT 0
+)
+
+CREATE TABLE Category (
+    CategoryID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    CategoryName varchar(255)  NOT NULL, 
+    TransactionDetailsID int  NOT NULL FOREIGN KEY REFERENCES TransactionDetails(TransactionDetailsID)
+)
+
+CREATE TABLE MyTRANSACTION (
+    MyTransactionID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    DataTransaction DATE,   
+    CategoryID int  NOT NULL FOREIGN KEY REFERENCES Category(CategoryID),
+    Amount MONEY  DEFAULT 0,
+    AccountID int  NOT NULL FOREIGN KEY REFERENCES Account(AccountID)
+)
+
