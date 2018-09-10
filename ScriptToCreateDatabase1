@@ -1,0 +1,43 @@
+use MyData
+IF EXISTS ( SELECT [name] FROM sys.tables WHERE [name] = 'MyTransaction' 
+                                          or    [name] = 'Account'
+                                          or    [name] = 'Category'
+                                          or    [name] = 'Currency'
+                                          or    [name] = 'TransactionDetails'
+          )
+DROP table MyTransaction, Account, Category, Currency, TransactionDetails
+
+ELSE 
+BEGIN
+CREATE TABLE TransactionDetails (
+    TransactionDetailsID int  NOT NULL  PRIMARY KEY IDENTITY(1,1),
+    TransactionName varchar(255)  NOT NULL UNIQUE
+     
+)
+
+CREATE TABLE Currency (
+    CurrencyID int  NOT NULL  PRIMARY KEY IDENTITY(1,1),
+    CurrencyName varchar(255)  NOT NULL UNIQUE
+)
+
+CREATE TABLE Account (
+    AccountID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    AccontName varchar(255)  NOT NULL, 
+    CurrencyID int not NULL FOREIGN KEY REFERENCES Currency(CurrencyID), 
+    Balance MONEY  DEFAULT 0
+)
+
+CREATE TABLE Category (
+    CategoryID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    CategoryName varchar(255)  NOT NULL, 
+    TransactionDetailsID int  NOT NULL FOREIGN KEY REFERENCES TransactionDetails(TransactionDetailsID)
+)
+
+CREATE TABLE MyTRANSACTION (
+    MyTransactionID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    DataTransaction DATE,   
+    CategoryID int  NOT NULL FOREIGN KEY REFERENCES Category(CategoryID),
+    Amount MONEY  DEFAULT 0,
+    AccountID int  NOT NULL FOREIGN KEY REFERENCES Account(AccountID)
+)
+END
