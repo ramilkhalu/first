@@ -1,43 +1,184 @@
+--Use master
+--drop DATABASE MyData
+--CREATE DATABASE MyData
 use MyData
-IF EXISTS ( SELECT [name] FROM sys.tables WHERE [name] = 'MyTransaction' 
-                                          or    [name] = 'Account'
-                                          or    [name] = 'Category'
-                                          or    [name] = 'Currency'
-                                          or    [name] = 'TransactionDetails'
-          )
-DROP table MyTransaction, Account, Category, Currency, TransactionDetails
+--IF EXISTS ( SELECT [name] FROM sys.tables WHERE [name] = 'MyTransaction' 
+--                                          or    [name] = 'Account'
+--                                          or    [name] = 'Category'
+--                                          or    [name] = 'Currency'
+--                                          or    [name] = 'TransactionDetails'
+--                                          or    [name] = 'RatesUsdRubTmp'
+--                                          or    [name] = 'TransactionTmp'
+--          )
+DROP table MyTransaction, Account, Category, Currency, TransactionDetails, RatesUsdRubTmp,TransactionTmp
 
-ELSE 
-BEGIN
-CREATE TABLE TransactionDetails (
-    TransactionDetailsID int  NOT NULL  PRIMARY KEY IDENTITY(1,1),
-    TransactionName varchar(255)  NOT NULL UNIQUE
+--ELSE 
+--BEGIN
+	CREATE TABLE TransactionDetails 
+	(
+    	TransactionDetailsID int  NOT NULL  PRIMARY KEY IDENTITY(1,1),
+    	TransactionDetailsName varchar(255)  NOT NULL UNIQUE
      
-)
+	)
 
-CREATE TABLE Currency (
-    CurrencyID int  NOT NULL  PRIMARY KEY IDENTITY(1,1),
-    CurrencyName varchar(255)  NOT NULL UNIQUE
-)
+	CREATE TABLE Currency 
+	(
+	    CurrencyID int  NOT NULL  PRIMARY KEY IDENTITY(1,1),
+   		CurrencyName varchar(255)  NOT NULL UNIQUE
+	)
 
-CREATE TABLE Account (
-    AccountID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
-    AccontName varchar(255)  NOT NULL, 
-    CurrencyID int not NULL FOREIGN KEY REFERENCES Currency(CurrencyID), 
-    Balance MONEY  DEFAULT 0
-)
+	CREATE TABLE Account 
+	(
+    	AccountID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    	AccountName varchar(255)  NOT NULL, 
+    	CurrencyID int not NULL FOREIGN KEY REFERENCES Currency(CurrencyID), 
+    	Balance MONEY  DEFAULT 0
+	)
 
-CREATE TABLE Category (
-    CategoryID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
-    CategoryName varchar(255)  NOT NULL, 
-    TransactionDetailsID int  NOT NULL FOREIGN KEY REFERENCES TransactionDetails(TransactionDetailsID)
-)
+	CREATE TABLE Category 
+	(
+    	CategoryID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    	CategoryName varchar(255)  NOT NULL, 
+    	TransactionDetailsID int  NOT NULL FOREIGN KEY REFERENCES TransactionDetails(TransactionDetailsID)
+	)
 
-CREATE TABLE MyTRANSACTION (
-    MyTransactionID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
-    DataTransaction DATE,   
-    CategoryID int  NOT NULL FOREIGN KEY REFERENCES Category(CategoryID),
-    Amount MONEY  DEFAULT 0,
-    AccountID int  NOT NULL FOREIGN KEY REFERENCES Account(AccountID)
-)
-END
+	CREATE TABLE MyTransaction
+	(
+    	MyTransactionID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    	DateTransaction DATE,   
+    	CategoryID int  NOT NULL FOREIGN KEY REFERENCES Category(CategoryID),
+    	Amount MONEY  DEFAULT 0,
+    	AccountID int  NOT NULL FOREIGN KEY REFERENCES Account(AccountID)
+    )
+	CREATE TABLE  RatesUsdRubTmp
+	(
+--		RatesID int NOT NULL PRIMARY KEY IDENTITY(1,1),
+		RatesDate date,
+		RatesRub  VARCHAR (10)
+	)
+	CREATE TABLE  TransactionTmp
+	(
+		TypeTMP VARCHAR (10),
+		OperationName  VARCHAR (50),
+		AmountMin FLOAT,
+		AmountMax Float,
+		CurrencyTmp VARCHAR (10),
+		Rate INT,
+		Period VARCHAR (10),
+		AccountTmp VARCHAR (10)		
+	)	
+	
+	
+use MyData
+
+	BULK INSERT RatesUsdRubTmp FROM '/var/backups/Rates1.csv'
+	WITH 
+	(
+	  FIELDTERMINATOR = ';',
+      ROWTERMINATOR = '0x0a'
+    )
+    
+    BULK INSERT TransactionTmp FROM '/var/backups/Transac.csv'
+	WITH 
+	(
+	  FirstRow = 2,
+	  FIELDTERMINATOR = ';',
+      ROWTERMINATOR = '0x0a'
+    )
+
+	
+INSERT INTO TransactionDetails (TransactionDetailsName)
+SELECT typeTmp from TransactionTmp
+GROUP BY typeTmp
+
+INSERT INTO Category (CategoryName, TransactiondetailsID) 
+SELECT TrTmp.OperationName, 
+	   (
+	     select  TrDet.TransactionDetailsID 
+	     from TransactionDetails as TrDet 
+	     WHERE TrDet.TransactionDetailsName =TrTmp.TypeTmp 
+	   )  
+from TransactionTmp as TrTmp 
+
+INSERT INTO Currency (CurrencyName)
+SELECT CurrencyTmp from TransactionTmp
+GROUP BY CurrencyTmp
+
+
+
+INSERT INTO Account (AccountName, CurrencyID)
+SELECT Curs.AccountTmp, Curs.CurrencyID
+--, Curs.rnd
+ FROM
+		(
+			SELECT Cur.CurrencyID, TrTmp.CurrencyTmp, TrTmp.AccountTmp
+--			, cast ( rand( cast ( newid() as varbinary(16) ) ) * 1000000 + 1 as int )  as rnd 
+			FROM Currency as Cur, TransactionTmp as TrTmp
+			Where Cur.CurrencyName=TrTmp.CurrencyTmp
+			GROUP BY Cur.CurrencyID,TrTmp.CurrencyTmp, TrTmp.AccountTmp   
+		) Curs
+
+INSERT INTO MyTransaction (DateTransaction,CategoryId,Amount,AccountId) 
+SELECT RatesDate,1,1,1 
+FROM RatesUsdRubTmp as RaTmp
+
+--declare @i int;
+declare	@j 		int;
+declare	@c		int;
+declare @a 		int;
+declare @amax 	int;
+declare @amin 	int;
+declare @ac 	int;
+--	set @i = 1;
+	set @j = 1;
+WHILE @j<=(select max(MyTransactionID) From MyTransaction) 
+BEGIN
+	set @c= FLOOR((select max(CategoryId) From Category)*rand() + 1);
+	set @ac = (
+				SELECT AccountID 
+				From Account as Ac 
+				WHERE Ac.AccountName =(
+	                                   Select AccountTmp 
+				                       From TransactionTmp as TrTmp 
+	                                   WHERE TrTmp.OperationName = (
+	                                                                SELECT CategoryName 
+	                                                                from Category as cat 
+	                                                                Where Cat.CategoryID = @C
+	                                                               )
+	                                  )
+		      );
+	set @amax = (
+		 		 SELECT TrTmp.AmountMax
+		 		 from TransactionTmp as TrTmp 
+		 		 WHERE TrTmp.OperationName = (SELECT CategoryName from Category as Cat Where Cat.CategoryId = @c )
+		        ) ;
+    set @amin = (
+		 		 SELECT TrTmp.AmountMin
+		 		 from TransactionTmp as TrTmp 
+		 		 WHERE TrTmp.OperationName = (SELECT CategoryName from Category as Cat Where Cat.CategoryId = @c )
+		        ) ;
+    set @a= FLOOR((@amax-@amin +1)*rand() + @amin);
+	Update MyTransaction
+	set CategoryID = @c, Amount = @a, AccountId = @ac
+	WHERE MytransactionID=@j
+	set @j=@j+1;
+END	
+
+--INSERT INTO MyTransaction (DateTransaction,CategoryId,Amount,AccountId) 
+--SELECT RatesDate, 
+--       Am.CategoryID,
+--	   FLOOR((Am.AmountMax-Am.AmountMin +1)*rand() + Am.AmountMin) as Amou,
+--	   (SELECT AccountID From Account as Ac Where Am.AccountTmp = Ac.AccountName)
+--FROM RatesUsdRubTmp as RaTmp,
+--     ( 
+--       select cat.CategoryID, AmountMin, AmountMax, AccountTmp 
+--       From TransactionTmp as TrTmp, 
+--            (
+--              SELECT TOP 1 CategoryID, CategoryName  FROM Category ORDER BY NEWID()
+--	        )  Cat
+--       Where Cat.CategoryName = TrTmp.OperationName 
+--     ) Am
+--
+-- 
+--END
+
