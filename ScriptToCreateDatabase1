@@ -10,7 +10,7 @@ use MyData
 --                                          or    [name] = 'RatesUsdRubTmp'
 --                                          or    [name] = 'TransactionTmp'
 --          )
-DROP table MyTransaction, Account, Category, Currency, TransactionDetails, RatesUsdRubTmp,TransactionTmp
+DROP table MyTransaction, Account, Category, Currency, TransactionDetails, RatesUsdRub,TransactionTmp
 
 --ELSE 
 --BEGIN
@@ -50,7 +50,7 @@ DROP table MyTransaction, Account, Category, Currency, TransactionDetails, Rates
     	Amount MONEY  DEFAULT 0,
     	AccountID int  NOT NULL FOREIGN KEY REFERENCES Account(AccountID)
     )
-	CREATE TABLE  RatesUsdRubTmp
+	CREATE TABLE  RatesUsdRub
 	(
 --		RatesID int NOT NULL PRIMARY KEY IDENTITY(1,1),
 		RatesDate date,
@@ -71,12 +71,16 @@ DROP table MyTransaction, Account, Category, Currency, TransactionDetails, Rates
 	
 use MyData
 
-	BULK INSERT RatesUsdRubTmp FROM '/var/backups/Rates1.csv'
+	BULK INSERT RatesUsdRub  FROM '/var/backups/Rates1.csv'
 	WITH 
 	(
 	  FIELDTERMINATOR = ';',
       ROWTERMINATOR = '0x0a'
     )
+   
+   ALTER TABLE  RatesUsdRub
+   ADD RatesID int NOT NULL PRIMARY KEY IDENTITY(1,1)
+ 
     
     BULK INSERT TransactionTmp FROM '/var/backups/Transac.csv'
 	WITH 
@@ -86,6 +90,8 @@ use MyData
       ROWTERMINATOR = '0x0a'
     )
 
+     ALTER TABLE  TransactionTmp
+     ADD TransactionTmpID int NOT NULL PRIMARY KEY IDENTITY(1,1)
 	
 INSERT INTO TransactionDetails (TransactionDetailsName)
 SELECT typeTmp from TransactionTmp
@@ -118,67 +124,173 @@ SELECT Curs.AccountTmp, Curs.CurrencyID
 			GROUP BY Cur.CurrencyID,TrTmp.CurrencyTmp, TrTmp.AccountTmp   
 		) Curs
 
-INSERT INTO MyTransaction (DateTransaction,CategoryId,Amount,AccountId) 
-SELECT RatesDate,1,1,1 
-FROM RatesUsdRubTmp as RaTmp
-
+CREATE TABLE MyTransactionTmp
+	(
+--    	MyTransactionID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    	DateTransaction DATE,   
+    	CategoryID int  NOT NULL FOREIGN KEY REFERENCES Category(CategoryID),
+    	Amount MONEY  DEFAULT 0,
+    	AccountID int  NOT NULL FOREIGN KEY REFERENCES Account(AccountID)
+    )
+		
 --declare @i int;
-declare	@j 		int;
-declare	@c		int;
-declare @a 		int;
-declare @amax 	int;
-declare @amin 	int;
-declare @ac 	int;
---	set @i = 1;
-	set @j = 1;
-WHILE @j<=(select max(MyTransactionID) From MyTransaction) 
-BEGIN
-	set @c= FLOOR((select max(CategoryId) From Category)*rand() + 1);
-	set @ac = (
-				SELECT AccountID 
-				From Account as Ac 
-				WHERE Ac.AccountName =(
-	                                   Select AccountTmp 
-				                       From TransactionTmp as TrTmp 
-	                                   WHERE TrTmp.OperationName = (
-	                                                                SELECT CategoryName 
-	                                                                from Category as cat 
-	                                                                Where Cat.CategoryID = @C
-	                                                               )
-	                                  )
-		      );
-	set @amax = (
-		 		 SELECT TrTmp.AmountMax
-		 		 from TransactionTmp as TrTmp 
-		 		 WHERE TrTmp.OperationName = (SELECT CategoryName from Category as Cat Where Cat.CategoryId = @c )
-		        ) ;
-    set @amin = (
-		 		 SELECT TrTmp.AmountMin
-		 		 from TransactionTmp as TrTmp 
-		 		 WHERE TrTmp.OperationName = (SELECT CategoryName from Category as Cat Where Cat.CategoryId = @c )
-		        ) ;
-    set @a= FLOOR((@amax-@amin +1)*rand() + @amin);
-	Update MyTransaction
-	set CategoryID = @c, Amount = @a, AccountId = @ac
-	WHERE MytransactionID=@j
-	set @j=@j+1;
-END	
+declare	@i 						int; -- счетчик цикла для обхода таблицы тразакций, периодов и повторений
+declare	@j 						int; -- счетчик цикла таблицы дат
+declare	@k 						int; -- счетчик цикла повторений за период
+declare @rateid					int; -- переменная для хранения RateID from RatesUsdRub
+declare @p	 				    int; -- переменная для использования как признака посешения условия if последнего года
+declare @AmountMax 				int;
+declare @AmountMin 				int;
+declare @rate	 				int; -- переменная для хранения числа повторений за период
+declare @period	 				VARCHAR(50); -- переменная для хранения периода из таблицы транзакций и повторений
 
---INSERT INTO MyTransaction (DateTransaction,CategoryId,Amount,AccountId) 
---SELECT RatesDate, 
---       Am.CategoryID,
---	   FLOOR((Am.AmountMax-Am.AmountMin +1)*rand() + Am.AmountMin) as Amou,
---	   (SELECT AccountID From Account as Ac Where Am.AccountTmp = Ac.AccountName)
---FROM RatesUsdRubTmp as RaTmp,
---     ( 
---       select cat.CategoryID, AmountMin, AmountMax, AccountTmp 
---       From TransactionTmp as TrTmp, 
---            (
---              SELECT TOP 1 CategoryID, CategoryName  FROM Category ORDER BY NEWID()
---	        )  Cat
---       Where Cat.CategoryName = TrTmp.OperationName 
---     ) Am
---
--- 
---END
+  set @j = 1; -- установка счетчика цикла для обхода таблицы тразакций, периодов и повторений
+  WHILE @j<=(select COUNT(TransactionTmpID) From TransactionTmp) 
+   	BEGIN
+	  set @rate = (SELECT Rate FROM TransactionTmp WHERE TransactionTmpID = @j);
+	  set @period = (SELECT Period FROM TransactionTmp WHERE TransactionTmpID = @j);
+	  if (@period = 'Week' )  BEGIN
+			                    set @i=1;  -- установка счетчика цикла таблицы дат
+							    while @i<= (select COUNT(RatesId) From RatesUsdRub)
+								  BEGIN	
+   	 		 				        SELECT @AmountMax=TrTmp.AmountMax, @AmountMin = TrTmp.AmountMin
+		 		 				    from TransactionTmp as TrTmp 
+		 		 					WHERE TrTmp.TransactionTmpID = @j
+			
+									set @k=1; -- установка счетчика цикла повторений за период
+		                            WHILE @k <= @rate 
+		      						  BEGIN
+			      			            set @rateid= FLOOR(7*rand() + @i);
+			      						INSERT INTO MyTransactionTmp (DateTransaction,CategoryId,Amount,AccountId) 
+									    SELECT Rat.RatesDate,
+											 (
+										      SELECT CategoryID 
+										      FROM Category as Cat 
+										      WHERE Cat.CAtegoryName = (
+											          					SELECT OperationName 
+											          					from TransactionTmp as TrTmp 
+											          					WHERE TransactionTmpID = @j
+											                           )
+											 ),
+     										  (FLOOR((@AmountMax-@AmountMin +1)*rand() + @AmountMin)),
+											 (
+											  SELECT AccountID 
+											  From Account as Ac
+											  WHERE Ac.AccountName = (
+											          				  SELECT AccountTmp 
+											          				  from TransactionTmp as TrTmp 
+											          				  WHERE TransactionTmpID = @j
+											                         )
+											 )
+											  	
+											  FROM RatesUsdRub as Rat
+											  WHERE Rat.RatesID = @rateid 
+		      							  set @k = @k+1;  
+		      						 END -- Begin For cikl rate
+		      				      set @i=@i+7;
+		      				      END -- цикла дат
+	      					  END		-- IF period=Week 
+      else 
+      if (@period = 'month' )  BEGIN
+			                    set @i=1;  -- установка счетчика цикла таблицы дат
+							    while @i<= (select COUNT(RatesId) From RatesUsdRub)
+								  BEGIN	
+   	 		 				        SELECT @AmountMax=TrTmp.AmountMax, @AmountMin = TrTmp.AmountMin
+		 		 				    from TransactionTmp as TrTmp 
+		 		 					WHERE TrTmp.TransactionTmpID = @j
+			
+									set @k=1; -- установка счетчика цикла повторений за период
+		                            WHILE @k <= @rate 
+		      						  BEGIN
+			      			            set @rateid= FLOOR(30*rand() + @i);
+			      						INSERT INTO MyTransactionTmp (DateTransaction,CategoryId,Amount,AccountId) 
+									    SELECT Rat.RatesDate,
+											 (
+										      SELECT CategoryID 
+										      FROM Category as Cat 
+										      WHERE Cat.CAtegoryName = (
+											          					SELECT OperationName 
+											          					from TransactionTmp as TrTmp 
+											          					WHERE TransactionTmpID = @j
+											                           )
+											 ),
+     										  (FLOOR((@AmountMax-@AmountMin +1)*rand() + @AmountMin)),
+											 (
+											  SELECT AccountID 
+											  From Account as Ac
+											  WHERE Ac.AccountName = (
+											          				  SELECT AccountTmp 
+											          				  from TransactionTmp as TrTmp 
+											          				  WHERE TransactionTmpID = @j
+											                         )
+											 )
+											  	
+											  FROM RatesUsdRub as Rat
+											  WHERE Rat.RatesID = @rateid 
+		      							  set @k = @k+1;  
+		      						 END -- Begin For cikl rate for month
+		      				      set @i=@i+30;
+		      				      END -- цикла дат for month
+	      					  END		-- IF period=month 	      					  
+      else 
+      if (@period = 'Year' )  BEGIN
+	      						set @p=1; -- установка признака использования if проверки последнего промежутка
+			                    set @i=1;  -- установка счетчика цикла таблицы дат
+							    while @i<= (select COUNT(RatesId) From RatesUsdRub)
+								  BEGIN	
+   	 		 				        SELECT @AmountMax=TrTmp.AmountMax, @AmountMin = TrTmp.AmountMin
+		 		 				    from TransactionTmp as TrTmp 
+		 		 					WHERE TrTmp.TransactionTmpID = @j
+			
+									set @k=1; -- установка счетчика цикла повторений за период
+		                            WHILE @k <= @rate 
+		      						  BEGIN
+			      			            set @rateid= FLOOR(365*rand() + @i);
+			      						INSERT INTO MyTransactionTmp (DateTransaction,CategoryId,Amount,AccountId) 
+									    SELECT Rat.RatesDate,
+											 (
+										      SELECT CategoryID 
+										      FROM Category as Cat 
+										      WHERE Cat.CAtegoryName = (
+											          					SELECT OperationName 
+											          					from TransactionTmp as TrTmp 
+											          					WHERE TransactionTmpID = @j
+											                           )
+											 ),
+     										  (FLOOR((@AmountMax-@AmountMin +1)*rand() + @AmountMin)),
+											 (
+											  SELECT AccountID 
+											  From Account as Ac
+											  WHERE Ac.AccountName = (
+											          				  SELECT AccountTmp 
+											          				  from TransactionTmp as TrTmp 
+											          				  WHERE TransactionTmpID = @j
+											                         )
+											 )
+											  	
+											  FROM RatesUsdRub as Rat
+											  WHERE Rat.RatesID = @rateid 
+		      							  set @k = @k+1;  
+		      						 END -- Begin For cikl rate for year
+		      				        
+		      						 if ( (@i+365) > (select COUNT(RatesId) From RatesUsdRub)) and @p=1
+		      						 	BEGIN
+			      						    Set @i= (select COUNT(RatesId) 
+		      				      			         From RatesUsdRub)
+		      				      			set @p=0;         
+		      						 	END
+		      				         
+		      				        else  set @i=@i+365; 
+		      				      
+		      				      END -- цикла дат for year
+	      					  END		-- IF period=year 	      					  
+	      					  
+	      					  
+	         set @j = @j+1;                            							 
+    End -- begin for cikl Transac,period 
+	
+Insert INTO MyTransaction (DateTransaction,CategoryId,Amount,AccountId)
+SELECT * from MytransactionTmp as MT order BY Mt.DateTransaction
+
+DROP TABLE MyTransactionTmp
 
