@@ -1,0 +1,72 @@
+use MyData
+
+DROP TABLE CashFlow;
+
+CREATE TABLE CashFlow 
+	(
+    	CashFlowID int  NOT NULL PRIMARY KEY IDENTITY(1,1),
+    	konecPerioda	DATE, 
+    	sumInc			float       	NOT NULL,
+    	sumExp			float       	NOT NULL,
+    	Balance 	 	float    		NOT NULL 
+	)
+
+declare @nachaloNedeli 	date; -- Начало недельного периода 
+declare @konecNedeli 	date;   -- Конец недельного периода
+declare @balance 		float;       -- Баланс на конец периода
+declare @sumExp 		float;       -- Сумма расходов за недельный период
+declare @sumInc 		float;       -- Сумма доходов за недельный период
+declare @countDate 		int;         -- Количесво дней за наш 5 летний период
+declare @i 				int;		 -- счетчик цикла дат
+
+set @countDate=(select COUNT(RatesId) From RatesUsdRub);
+set @balance=0;
+set @i=1;
+while @i<=@countDate 
+	BEGIN
+		set @nachaloNedeli = (select ratesDate FROM RatesUsdRub as Rat WHERE Rat.RatesID = @i);
+		set @konecNedeli = (select ratesDate FROM RatesUsdRub as Rat WHERE Rat.RatesID = @i+6);
+
+
+		set @sumExp = (SELECT Sum(MyTr.Amount) 
+						From MyTransaction as MyTr
+						WHERE (MyTr.DateTransaction BETWEEN @nachaloNedeli and @konecNedeli) 
+						and (Select TrDet.TransactionDetailsName 
+						     From TransactionDetails as Trdet 
+						     Where TrDet.TransactionDetailsID = (
+						                                         SELECT Cat.TransactionDetailsID 
+						                                         From Category as Cat 
+						                                         WHERE Cat.CategoryID = MyTr.CategoryID
+						                                        )
+						    )= 'Exp'
+						)    
+		set @sumInc = (SELECT Sum(MyTr.Amount) 
+						From MyTransaction as MyTr
+						WHERE (MyTr.DateTransaction BETWEEN @nachaloNedeli and @konecNedeli) 
+						and (Select TrDet.TransactionDetailsName 
+						     From TransactionDetails as Trdet 
+						     Where TrDet.TransactionDetailsID = (
+						                                         SELECT Cat.TransactionDetailsID 
+						                                         From Category as Cat 
+						                                         WHERE Cat.CategoryID = MyTr.CategoryID
+						                                        )
+						    )= 'Inc' 
+						)
+		if (@sumInc) is Null  set @sumInc =0;		
+		if (@sumExp) is Null  set @sumInc =0;
+		
+		set @balance=(@balance+@sumInc)-@sumExp
+		
+       insert into CashFlow (konecPerioda, sumInc, sumExp, Balance)
+       select @konecNedeli, @sumInc, @sumExp, @balance		
+
+		set @i=@i+7;
+	END
+SELECT cashFlowID, 
+	   konecPerioda as 'Конец недели', 
+	   sumInc as 'Доходы за неделю', 
+	   sumExp as 'Расходы за неделю',
+	   balance as 'Баланс'
+FROM cashflow
+
+
